@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Bot Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .stat-card h3 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        .stat-card .value {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .search-box {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .search-box input {
+            width: 100%;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+        }
+        .leaderboard {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .leaderboard h2 {
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+        }
+        .user-item {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .user-item:hover {
+            background: rgba(255,255,255,0.1);
+            transform: translateX(5px);
+            transition: all 0.3s;
+        }
+        .user-rank {
+            font-size: 1.5rem;
+            font-weight: bold;
+            min-width: 50px;
+        }
+        .user-info {
+            flex: 1;
+            padding: 0 20px;
+        }
+        .user-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .user-stats {
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+        .user-level {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #ffd700;
+        }
+        .medal {
+            font-size: 2rem;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+        }
+        .user-detail {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-top: 20px;
+            border: 1px solid rgba(255,255,255,0.2);
+            display: none;
+        }
+        .user-detail.active {
+            display: block;
+        }
+        .progress-bar {
+            background: rgba(0,0,0,0.3);
+            height: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #00ff00, #ffd700);
+            height: 100%;
+            transition: width 0.3s;
+        }
+        .badges {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+        .badge {
+            font-size: 2rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🤖 Discord Bot Dashboard</h1>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>👥 Utilisateurs</h3>
+            <div class="value" id="totalUsers">-</div>
+        </div>
+        <div class="stat-card">
+            <h3>💬 Messages</h3>
+            <div class="value" id="totalMessages">-</div>
+        </div>
+        <div class="stat-card">
+            <h3>🎤 Heures Vocales</h3>
+            <div class="value" id="totalVoiceHours">-</div>
+        </div>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="userSearch" placeholder="🔍 Rechercher un utilisateur par ID...">
+    </div>
+
+    <div id="userDetail" class="user-detail"></div>
+
+    <div class="leaderboard">
+        <h2>🏆 Leaderboard</h2>
+        <div id="leaderboardList" class="loading">Chargement...</div>
+    </div>
+</div>
+
+<script>
+    const API_URL = window.location.origin;
+
+    // Load stats
+    async function loadStats() {
+        try {
+            const res = await fetch(`${API_URL}/api/stats`);
+            const data = await res.json();
+            document.getElementById('totalUsers').textContent = data.total_users;
+            document.getElementById('totalMessages').textContent = data.total_messages.toLocaleString();
+            document.getElementById('totalVoiceHours').textContent = data.total_voice_hours + 'h';
+        } catch (err) {
+            console.error('Error loading stats:', err);
+        }
+    }
+
+    // Load leaderboard
+    async function loadLeaderboard() {
+        try {
+            const res = await fetch(`${API_URL}/api/leaderboard?limit=20`);
+            const users = await res.json();
+
+            const medals = ['🥇', '🥈', '🥉'];
+            const html = users.map((user, i) => {
+                const medal = i < 3 ? `<span class="medal">${medals[i]}</span>` : `<span class="user-rank">#${i + 1}</span>`;
+                const prestige = user.prestige > 0 ? ` ⭐×${user.prestige}` : '';
+
+                return `
+            <div class="user-item">
+              ${medal}
+              <div class="user-info">
+                <div class="user-name">${user.username}${prestige}</div>
+                <div class="user-stats">💬 ${user.messages} messages • 🎤 ${user.voice_hours}h</div>
+              </div>
+              <div class="user-level">Lvl ${user.level}<br>${formatXp(user.xp)} XP</div>
+            </div>
+          `;
+            }).join('');
+
+            document.getElementById('leaderboardList').innerHTML = html;
+        } catch (err) {
+            document.getElementById('leaderboardList').innerHTML = '❌ Erreur de chargement';
+        }
+    }
+
+    // Search user
+    document.getElementById('userSearch').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const userId = e.target.value.trim();
+            if (!userId) return;
+
+            try {
+                const res = await fetch(`${API_URL}/api/user/${userId}`);
+                if (!res.ok) {
+                    alert('❌ Utilisateur introuvable');
+                    return;
+                }
+
+                const user = await res.json();
+                const detailDiv = document.getElementById('userDetail');
+
+                detailDiv.innerHTML = `
+            <h2>👤 ${user.username}</h2>
+            <p><strong>Niveau:</strong> ${user.level} ${user.prestige > 0 ? `⭐×${user.prestige}` : ''}</p>
+            <p><strong>XP:</strong> ${formatXp(user.xp)}</p>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${user.percentage}%"></div>
+            </div>
+            <p style="text-align:center">${formatXp(user.progress)} / ${formatXp(user.needed)} XP (${Math.round(user.percentage)}%)</p>
+            <p><strong>Messages:</strong> ${user.messages.toLocaleString()}</p>
+            <p><strong>Temps vocal:</strong> ${user.voice_hours}h</p>
+            <p><strong>Badges:</strong></p>
+            <div class="badges">
+              ${user.badges.map(b => `<span class="badge" title="${b.name}">${b.icon}</span>`).join('')}
+            </div>
+          `;
+
+                detailDiv.classList.add('active');
+                detailDiv.scrollIntoView({ behavior: 'smooth' });
+            } catch (err) {
+                alert('❌ Erreur lors de la recherche');
+            }
+        }
+    });
+
+    function formatXp(xp) {
+        if (xp >= 1000000) return (xp / 1000000).toFixed(1) + 'M';
+        if (xp >= 1000) return (xp / 1000).toFixed(1) + 'K';
+        return xp.toString();
+    }
+
+    // Load on start
+    loadStats();
+    loadLeaderboard();
+
+    // Refresh every 30 seconds
+    setInterval(() => {
+        loadStats();
+        loadLeaderboard();
+    }, 30000);
+</script>
+</body>
+</html>
