@@ -66,7 +66,11 @@ client.on(Events.MessageCreate, async (message) => {
     const newData = db.getUser(userId);
     const newLevel = levels.xpToLevel(newData.total_xp);
 
+    // Check for level up
     if (newLevel > oldLevel) {
+        // Check if it's a milestone (every 10 levels)
+        const isMilestone = newLevel % 10 === 0;
+
         const rewards = db.getRewards();
         const reward = rewards.find(r => r.level === newLevel);
 
@@ -83,10 +87,40 @@ client.on(Events.MessageCreate, async (message) => {
             }
         }
 
-        message.channel.send({
-            content: `🎉 ${message.author} passe niveau **${newLevel}** !${rewardMsg}`,
-            allowedMentions: { users: [userId] }
-        }).catch(() => {});
+        // Send level up message
+        if (isMilestone) {
+            // Special milestone message with mention
+            const embed = new (require('discord.js').EmbedBuilder)()
+                .setColor('#FFD700')
+                .setTitle('🎊 NIVEAU MILESTONE ATTEINT !')
+                .setDescription(
+                    `${message.author} vient d'atteindre le **niveau ${newLevel}** ! 🎉\n\n` +
+                    `✨ XP Total: ${levels.formatXp(newData.total_xp)}\n` +
+                    `💬 Messages: ${newData.message_count}\n` +
+                    `🎤 Temps vocal: ${(newData.voice_seconds / 3600).toFixed(2)}h` +
+                    rewardMsg
+                )
+                .setThumbnail(message.author.displayAvatarURL({ dynamic: true, size: 256 }))
+                .setTimestamp();
+
+            message.channel.send({
+                content: `🎉 <@${userId}>`,
+                embeds: [embed],
+                allowedMentions: { users: [userId] }
+            }).catch(() => {});
+
+            // Send DM for milestone
+            message.author.send({
+                embeds: [embed]
+            }).catch(() => {});
+
+        } else {
+            // Regular level up message
+            message.channel.send({
+                content: `🎉 ${message.author} passe niveau **${newLevel}** !${rewardMsg}`,
+                allowedMentions: { users: [userId] }
+            }).catch(() => {});
+        }
     }
 
     // Check badges
@@ -104,15 +138,34 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
     const userId = member.id;
     const ts = Math.floor(Date.now() / 1000);
+    const excludedChannelId = process.env.EXCLUDED_VOICE_CHANNEL;
 
     // User joined voice
     if (!oldState.channel && newState.channel) {
+        // Check if channel is excluded
+        if (newState.channel.id === excludedChannelId) {
+            console.log(`🚫 ${member.user.tag} joined excluded channel, no XP tracking`);
+            return;
+        }
+
+        // Check if user is muted or deafened
+        if (newState.serverMute || newState.serverDeaf || newState.selfMute || newState.selfDeaf) {
+            console.log(`🔇 ${member.user.tag} is muted/deafened, no XP tracking`);
+            return;
+        }
+
         db.startVoice(userId, member.user.tag, ts);
         console.log(`🎤 ${member.user.tag} joined voice`);
     }
 
     // User left voice
     else if (oldState.channel && !newState.channel) {
+        // Only give XP if they were in a valid channel
+        if (oldState.channel.id === excludedChannelId) {
+            console.log(`🚫 ${member.user.tag} left excluded channel, no XP awarded`);
+            return;
+        }
+
         const result = db.endVoice(userId, ts, levels.xpForVoiceMinute());
 
         if (result) {
@@ -131,6 +184,27 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                 const badgeNames = newBadges.map(b => `${b.icon} ${b.name}`).join(', ');
                 member.user.send(`🏅 Nouveau badge: ${badgeNames}`).catch(() => {});
             }
+        }
+    }
+
+    // User state changed (mute/unmute, deaf/undeaf) while in channel
+    else if (oldState.channel && newState.channel) {
+        const excludedChannel = newState.channel.id === excludedChannelId;
+        const wasMuted = oldState.serverMute || oldState.serverDeaf || oldState.selfMute || oldState.selfDeaf;
+        const isMuted = newState.serverMute || newState.serverDeaf || newState.selfMute || newState.selfDeaf;
+
+        // User got muted/deafened or entered excluded channel - stop tracking
+        if ((!wasMuted && isMuted) || (!excludedChannel && excludedChannel)) {
+            const result = db.endVoice(userId, ts, levels.xpForVoiceMinute());
+            if (result) {
+                console.log(`🔇 ${member.user.tag} got muted/moved to excluded, stopped tracking`);
+            }
+        }
+
+        // User got unmuted/undeafened and not in excluded channel - start tracking
+        else if (wasMuted && !isMuted && !excludedChannel) {
+            db.startVoice(userId, member.user.tag, ts);
+            console.log(`🔊 ${member.user.tag} got unmuted, started tracking`);
         }
     }
 });
